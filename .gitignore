@@ -1,0 +1,52 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+.log
+
+# Binaries
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Cache files
+.cache/
+.next/
+out/
+.nuxt/
+.svelte-kit/
+
+# Testing coverage reports
+coverage/
+
+# Misc
+*.bak
+*.orig
