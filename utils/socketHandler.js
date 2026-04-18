@@ -216,7 +216,7 @@ const initSocket = (httpServer) => {
                     },
                     type: 'text',
                     body: message.body,
-                    replyTo: message.replyTo,
+                    replyTo: message.replyTo || null,
                     readBy: [socket.user._id],
                     createdAt: message.createdAt,
                 };
