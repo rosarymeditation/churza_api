@@ -41,7 +41,16 @@ const CellGroup = require('../models/CellGroup');
 const ChatMessage = require('../models/ChatMessage');
 const cloudinary = require('../config/cloudinary');
 const { sendPushNotification } = require('../utils/notifications');
-
+const isAdminOrPastor = async (userId, churchId) => {
+    const Membership = require('../models/Membership');
+    const m = await Membership.findOne({
+        user: userId,
+        church: churchId,
+        status: 'active',
+        role: { $in: ['admin', 'pastor', 'super_admin'] },
+    });
+    return !!m;
+};
 /**
  * initSocket — Attaches Socket.IO to your existing Express HTTP server.
  *
@@ -53,7 +62,7 @@ const { sendPushNotification } = require('../utils/notifications');
  * @param {http.Server} httpServer - Your Express HTTP server instance
  */
 const initSocket = (httpServer) => {
-    
+
 
     // Create the Socket.IO server attached to your HTTP server
     // cors: allows your Flutter app to connect from any origin
@@ -120,8 +129,12 @@ const initSocket = (httpServer) => {
                 );
                 const isLeader = group.leader?.toString() === socket.user._id.toString();
 
-                if (!isMember && !isLeader) {
-                    socket.emit('error', { message: 'Not a member of this group' });
+                const isAdmin = await isAdminOrPastor(
+                    socket.user._id,
+                    group.church.toString()
+                );
+                if (!isMember && !isLeader && !isAdmin) {
+                    socket.emit('error', { message: 'Not authorised' });
                     return;
                 }
 
@@ -188,7 +201,15 @@ const initSocket = (httpServer) => {
                 console.log(isMember)
                 console.log(socket.user);
                 const isLeader = group.leader?.toString() === socket.user._id.toString();
-                if (!isMember && !isLeader) return;
+                // if (!isMember && !isLeader) return;
+                const isAdmin = await isAdminOrPastor(
+                    socket.user._id,
+                    group.church.toString()
+                );
+                if (!isMember && !isLeader && !isAdmin) {
+
+                    return;
+                }
                 console.log(cellGroupId)
                 // Save the message to MongoDB
                 const message = await ChatMessage.create({
@@ -288,7 +309,15 @@ const initSocket = (httpServer) => {
                     (m) => m._id.toString() === socket.user._id.toString()
                 );
                 const isLeader = group.leader?.toString() === socket.user._id.toString();
-                if (!isMember && !isLeader) return;
+                const isAdmin = await isAdminOrPastor(
+                    socket.user._id,
+                    group.church.toString()
+                );
+                if (!isMember && !isLeader && !isAdmin) {
+
+                    return;
+                }
+
 
                 // Broadcast the message to everyone in the room
                 // INCLUDING the sender — so all other devices of the sender
@@ -317,8 +346,12 @@ const initSocket = (httpServer) => {
                 const isSender = message.sender.toString() === socket.user._id.toString();
                 const isLeader = group?.leader?.toString() === socket.user._id.toString();
 
-                if (!isSender && !isLeader) {
-                    socket.emit('error', { message: 'Cannot delete this message' });
+                const isAdmin = await isAdminOrPastor(
+                    socket.user._id,
+                    group.church.toString()
+                );
+                if (!isMember && !isLeader && !isAdmin) {
+                    
                     return;
                 }
 

@@ -64,7 +64,11 @@ const churchSchema = new mongoose.Schema(
     settings: {
       requireApproval: { type: Boolean, default: true },
       absenteeThreshold: { type: Number, default: 3 },
-      currency: { type: String, default: 'NGN' },
+      currency: {
+        type: String,
+        default: 'GBP',
+        enum: ['GBP', 'USD', 'EUR', 'NGN', 'GHS', 'KES', 'ZAR', 'CAD'],
+      },
 
       prayerWallPublic: { type: Boolean, default: true },
 

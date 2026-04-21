@@ -25,7 +25,16 @@ const ChatMessage = require('../models/ChatMessage');
 const Membership = require('../models/Membership');
 const cloudinary = require('../config/cloudinary');
 const { sendPushNotification } = require('../utils/notifications');
-
+const isAdminOrPastor = async (userId, churchId) => {
+    const Membership = require('../models/Membership');
+    const m = await Membership.findOne({
+        user: userId,
+        church: churchId,
+        status: 'active',
+        role: { $in: ['admin', 'pastor', 'super_admin'] },
+    });
+    return !!m;
+};
 const catchAsync = (fn) => (req, res, next) =>
     Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -166,9 +175,14 @@ const getMessages = catchAsync(async (req, res) => {
     const group = await CellGroup.findOne({ _id: req.params.groupId, church: req.params.churchId });
     if (!group) return errorResponse(res, 404, 'Group not found');
 
-    const isMember = group.members.some((m) => m.toString() === req.user._id.toString());
+    const isMember = group.members.some(
+        (m) => m.toString() === req.user._id.toString()
+    );
     const isLeader = group.leader?.toString() === req.user._id.toString();
-    if (!isMember && !isLeader) return errorResponse(res, 403, 'Not a member of this group');
+    const isAdmin = await isAdminOrPastor(req.user._id, req.params.churchId);
+    if (!isMember && !isLeader && !isAdmin) {
+        return errorResponse(res, 403, 'Not authorised');
+    }
 
     const messages = await ChatMessage.find({ cellGroup: req.params.groupId })
         .populate('sender', 'firstName lastName photoUrl')

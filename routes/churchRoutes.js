@@ -87,6 +87,12 @@ router.patch('/:churchId/events/:eid/cancel', protect, safe(c.cancelEvent));
 router.post('/:churchId/events/:eid/rsvp', protect, safe(c.rsvp));
 
 // ── Announcements ─────────────────────────────────────────
+router.post(
+    '/:churchId/members/create',
+    protect,
+    requireChurchRole('admin', 'pastor'),
+    c.createMemberByAdmin
+);
 router.post('/:churchId/announcements', protect, safe(c.createAnnouncement));
 router.get('/:churchId/announcements', protect, safe(c.getAnnouncements));
 router.get('/:churchId/announcements/:aid', protect, safe(c.getAnnouncement));

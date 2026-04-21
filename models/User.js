@@ -51,13 +51,21 @@ const userSchema = new mongoose.Schema(
       default: 'user',
     },
 
-    pushTokens: [{ type: String }],
-
+    pushToken: { type: String, default: null },
+    isAdminCreated: {
+      type: Boolean,
+      default: false,
+    },
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
+   
     isEmailVerified: { type: Boolean, default: false },
     emailVerificationToken: { type: String, select: false },
     passwordResetToken: { type: String, select: false },
     passwordResetExpiresAt: { type: Date, select: false },
-
+    passwordResetCode: { type: String },
     lastLoginAt: { type: Date },
     isActive: { type: Boolean, default: true },
   },

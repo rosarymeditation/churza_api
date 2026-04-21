@@ -5,6 +5,8 @@ const Membership = require('../models/Membership');
 const Notification = require('../models/Notification');
 const Announcement = require('../models/Announcement');
 const Event = require('../models/Event');
+const User = require('../models/User');
+const { sendEmail } = require('../utils/email');
 const Sermon = require('../models/Sermon');           // ← add
 const cloudinary = require('../config/cloudinary');
 const catchAsync = (fn) => (req, res, next) =>
@@ -993,6 +995,185 @@ const rsvp = catchAsync(async (req, res) => {
 
   res.status(200).json({ success: true, event: response });
 });
+/**
+ * ADD THIS TO YOUR churchController.js
+ *
+ * POST /api/churches/:churchId/members/create
+ *
+ * Admin or pastor creates a member account directly.
+ * This is useful when a church member does not have a smartphone
+ * or needs help getting set up.
+ *
+ * What it does:
+ *   1. Creates a User account with a temporary password
+ *   2. Creates a Membership linking them to the church
+ *   3. Sends a welcome email with their login credentials
+ *   4. Returns the new membership
+ *
+ * Body:
+ *   firstName    — required
+ *   lastName     — required
+ *   email        — required (their login email)
+ *   phone        — optional
+ *   role         — optional, default 'member'
+ *   sendEmail    — optional boolean, default true
+ *   cellGroupId  — optional, assign to cell group immediately
+ *
+ * Auth: protect + requireChurchRole('admin', 'pastor')
+ */
+
+const createMemberByAdmin = async (req, res) => {
+  try {
+    const bcrypt = require('bcryptjs');
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      role = 'member',
+      sendWelcomeEmail = true,
+      cellGroupId,
+    } = req.body;
+
+    // ── Validation ──────────────────────────────────────
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name, last name and email are required',
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address',
+      });
+    }
+
+    // ── Check church exists ─────────────────────────────
+    const church = await Church.findById(req.params.churchId);
+    if (!church) {
+      return res.status(404).json({
+        success: false,
+        message: 'Church not found',
+      });
+    }
+
+    // ── Check if email already registered ──────────────
+    let user = await User.findOne({ email: email.toLowerCase() });
+    let isExistingUser = false;
+
+    if (user) {
+      isExistingUser = true;
+
+      // Check if already a member of this church
+      const existingMembership = await Membership.findOne({
+        user: user._id,
+        church: req.params.churchId,
+      });
+
+      if (existingMembership) {
+        return res.status(409).json({
+          success: false,
+          message: `${firstName} is already a member of this church`,
+        });
+      }
+      // If user exists but not in this church — just add membership
+    } else {
+      // ── Create new user account ─────────────────────
+      // Generate a temporary password — member should change on first login
+      // Format: Churza + 6 random digits e.g. "Churza847291"
+      const tempPassword = `Churza${crypto.randomInt(100000, 999999)}`;
+      const hashedPassword = await bcrypt.hash(tempPassword, 12);
+
+      user = await User.create({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.toLowerCase().trim(),
+        phone: phone?.trim(),
+        passwordHash: hashedPassword,  // ← matches your User schema
+        isAdminCreated: true,
+        mustChangePassword: true,
+        isEmailVerified: true,
+      });
+      // ── Send welcome email ──────────────────────────
+      if (sendWelcomeEmail) {
+        try {
+          // Use your existing email sending setup
+          // Replace this with your actual email function
+       
+          await sendEmail({
+            to: email,
+            subject: `Welcome to ${church.name} — Your Churza account`,
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>Welcome to ${church.name}!</h2>
+                <p>Hello ${firstName},</p>
+                <p>Your pastor has created a Churza account for you to stay connected 
+                   with ${church.name}.</p>
+                <p><strong>Your login details:</strong></p>
+                <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                  <p><strong>Email:</strong> ${email}</p>
+                  <p><strong>Temporary password:</strong> ${tempPassword}</p>
+                </div>
+                <p>Please download the Churza app and sign in with these details. 
+                   You will be asked to change your password on first login.</p>
+                <p>God bless you,<br>${church.name}</p>
+              </div>
+            `,
+          });
+        } catch (emailErr) {
+          // Non-critical — account is still created even if email fails
+          console.warn('Welcome email failed:', emailErr.message);
+        }
+      }
+    }
+
+    // ── Create membership ───────────────────────────────
+    // Generate membership number: first 3 letters of church name + 6 digits
+    const prefix = church.name
+      .replace(/\s/g, '')
+      .substring(0, 3)
+      .toUpperCase();
+    const membershipNumber = `${prefix}${Date.now().toString().slice(-6)}`;
+
+    const membership = await Membership.create({
+      user: user._id,
+      church: req.params.churchId,
+      role: ['admin', 'pastor', 'cell_leader', 'deacon', 'worker']
+        .includes(role) ? role : 'member',
+      status: 'active', // Admin-created = auto-approved
+      membershipNumber,
+      cellGroup: cellGroupId || undefined,
+      joinedAt: new Date(),
+      approvedBy: req.user._id,
+      approvedAt: new Date(),
+    });
+
+    await membership.populate('user', 'firstName lastName email photoUrl phone');
+
+    res.status(201).json({
+      success: true,
+      membership,
+      isExistingUser,
+      message: isExistingUser
+        ? `${firstName} ${lastName} has been added to your church`
+        : `Account created for ${firstName} ${lastName}. ${sendWelcomeEmail ? 'A welcome email has been sent.' : ''}`,
+    });
+
+  } catch (err) {
+    console.error('createMemberByAdmin error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.code === 11000
+        ? 'This email is already registered'
+        : 'Failed to create member account',
+    });
+  }
+};
+
+
 module.exports = {
   createChurch,
   getChurch,
@@ -1011,7 +1192,6 @@ module.exports = {
   getSermon,
   updateSermon,
   deleteSermon,
-
   createPrayerRequest,
   getPrayerRequests,
   getPrayerRequest,
@@ -1023,12 +1203,11 @@ module.exports = {
   getAnnouncement,
   updateAnnouncement,
   deleteAnnouncement,
-
-
   createEvent,
   getEvents,
   getEvent,
   updateEvent,
   cancelEvent,
   rsvp,
+  createMemberByAdmin,
 };
