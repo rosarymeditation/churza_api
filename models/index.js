@@ -6,6 +6,9 @@
  *   const { Church, Membership, AttendanceRecord } = require('./models');
  */
 
+const Attendance = require('./Attendance');
+const AttendanceSession = require('./AttendanceSession');
+
 module.exports = {
   Church:             require('./Church'),
   User:               require('./User'),
@@ -22,4 +25,6 @@ module.exports = {
   Announcement:       require('./Announcement'),
   Notification:       require('./Notification'),
   ChatMessage:        require('./ChatMessage'),
+  AttendanceSession: require('./AttendanceSession'),
+  Attendance: require('./Attendance'),
 };

@@ -13,6 +13,8 @@ const http = require('http');
 const { initSocket } = require('./utils/socketHandler');
 const chatRoutes = require('./routes/chatRoutes');
 const errorHandler = require('./middleware/errorHandler');
+const attendanceRoutes = require('./routes/attendanceRoutes');
+
 
 require('./models');
 
@@ -58,7 +60,7 @@ app.use('/api/churches', churchRoutes);   // handles /api/churches/*
 app.use('/api/churches', liveRoutes);     // shares /api/churches — handles /api/churches/:churchId/live/*
 app.use('/api/payments', paymentRoutes);  // handles /api/payments/*
 app.use('/api/chat', chatRoutes);
-
+app.use('/api/churches/:churchId/attendance', attendanceRoutes);
 // ── Health check ──────────────────────────────────────────
 app.get('/health', (req, res) =>
   res.status(200).json({ success: true, message: 'ChurchConnect API is running' })

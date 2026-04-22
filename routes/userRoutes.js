@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const upload = require('../middleware/upload'); // multer already set up
+
 const {
     register,
     login,
@@ -17,11 +19,14 @@ const {
     getUserById,
     setUserStatus,
     verifyResetCode,
+    uploadPhoto,
+    submitFeedback
 } = require('../controllers/userController');
 
 const {
     protect,
     restrictTo,
+    optionalAuth
 } = require('../middleware/auth');
 
 // ─────────────────────────────────────────────────────────
@@ -55,6 +60,8 @@ router.patch('/users/:id/status', restrictTo('super_admin'), setUserStatus);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/verify-reset-code', verifyResetCode);
+router.post('/users/me/photo', protect, upload.single('photo'), uploadPhoto);
+router.post('/support/feedback', optionalAuth, submitFeedback);
 router.patch('/users/push-token', protect, async (req, res) => {
     try {
         const { pushToken } = req.body;

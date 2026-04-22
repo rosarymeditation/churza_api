@@ -3,7 +3,8 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const Membership = require('../models/Membership');
 const Notification = require('../models/Notification');
-const { send, passwordResetOptions } = require('../utils/email');
+const { send, passwordResetOptions, sendEmail } = require('../utils/email');
+
 // ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
@@ -683,7 +684,107 @@ const verifyResetCode = async (req, res) => {
         res.status(500).json({ success: false, message: 'Verification failed' });
     }
 };
+const uploadPhoto = async (req, res) => {
+    if (!req.file) {
+        return errorResponse(res, 400, 'No image file provided');
+    }
 
+    const cloudinary = require('../config/cloudinary');
+
+    const base64 = req.file.buffer.toString('base64');
+    const dataUri = `data:${req.file.mimetype};base64,${base64}`;
+
+    const result = await cloudinary.uploader.upload(dataUri, {
+        folder: `churza/profiles`,
+        transformation: [
+            { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+            { quality: 'auto', fetch_format: 'auto' },
+        ],
+        public_id: `user_${req.user._id}`, // overwrite same file each upload
+        overwrite: true,
+    });
+
+    const user = await User.findByIdAndUpdate(
+        req.user._id,
+        { photoUrl: result.secure_url },
+        { new: true }
+    );
+
+    res.json({ success: true, photoUrl: result.secure_url, user: user.toSafeObject() });
+};
+const submitFeedback= async(req, res)=>{
+    const { reason, message, email } = req.body;
+
+    if (!reason || !message) {
+        return errorResponse(res, 400, 'Reason and message are required');
+    }
+
+    if (message.trim().length < 10) {
+        return errorResponse(res, 400, 'Message must be at least 10 characters');
+    }
+
+    const senderEmail = email || req.user?.email || 'Unknown';
+    const senderName = req.user
+        ? `${req.user.firstName} ${req.user.lastName}`
+        : 'Anonymous';
+
+    const reasonLabels = {
+        bug: 'Bug report',
+        suggestion: 'Feature suggestion',
+        giving: 'Giving / payment issue',
+        account: 'Account problem',
+        church: 'Church management',
+        other: 'General enquiry',
+    };
+
+    const reasonLabel = reasonLabels[reason] || reason;
+
+    // Send email to support
+    await sendEmail({
+        to: 'support@churza.org',
+        replyTo: senderEmail,
+        subject: `[Churza Feedback] ${reasonLabel} — from ${senderName}`,
+        html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #0B1F3A;">New feedback from Churza app</h2>
+
+        <table style="width:100%; border-collapse: collapse; margin: 16px 0;">
+          <tr>
+            <td style="padding: 8px 12px; background: #f5f5f5; font-weight: bold; width: 140px;">From</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">${senderName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; background: #f5f5f5; font-weight: bold;">Email</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">${senderEmail}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; background: #f5f5f5; font-weight: bold;">Reason</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">${reasonLabel}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; background: #f5f5f5; font-weight: bold;">App version</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">${req.headers['x-app-version'] || 'Unknown'}</td>
+          </tr>
+        </table>
+
+        <h3 style="color: #0B1F3A;">Message</h3>
+        <div style="background: #f9f9f9; border-left: 4px solid #C9A84C;
+          padding: 16px; border-radius: 4px; white-space: pre-wrap;">
+          ${message.trim()}
+        </div>
+
+        <p style="color: #888; font-size: 12px; margin-top: 24px;">
+          Sent from Churza mobile app · ${new Date().toUTCString()}
+        </p>
+      </div>
+    `,
+    });
+
+    res.json({
+        success: true,
+        message: 'Thank you for your feedback. We will get back to you within 5 business days.',
+    });
+}
 // ─────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────
@@ -709,5 +810,7 @@ module.exports = {
     getAllUsers,
     getUserById,
     setUserStatus,
-    verifyResetCode
+    verifyResetCode,
+    uploadPhoto,
+    submitFeedback
 };

@@ -4,6 +4,7 @@ const Church = require('../models/Church');
 const mongoose = require('mongoose');
 const Membership = require('../models/Membership');
 const GivingTransaction = require('../models/GivingTransaction');
+
 const catchAsync = (fn) => (req, res, next) =>
     Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -66,8 +67,8 @@ const connectStripe = catchAsync(async (req, res) => {
     // Generate onboarding link
     const accountLink = await stripe.accountLinks.create({
         account: account.id,
-        refresh_url: "https://churza.app/stripe/refresh",
-        return_url: 'https://churza.app/stripe/return',
+        refresh_url: "https://churza.org/onboarding/error",
+        return_url: 'https://churza.org/onboarding/success',
         type: 'account_onboarding',
     });
 
@@ -157,63 +158,120 @@ const disconnectStripe = catchAsync(async (req, res) => {
 /**
  * POST /api/payments/:churchId/intent
  *
- * Member initiates a payment.
- * Creates a Stripe PaymentIntent and returns clientSecret
- * for the Flutter Stripe SDK to present the payment sheet.
+ * Creates a Stripe PaymentIntent for a member giving online.
  *
- * Body: { amount, currency, type }
- * type: 'tithe' | 'offering' | 'pledge' | 'special'
- * amount: in smallest currency unit (pence for GBP, kobo for NGN)
+ * FEES:
+ *   Platform fee: 1.5% → goes to Softnergy Limited (Churza)
+ *   Stripe fee:   1.5% + 20p → deducted by Stripe automatically
+ *   Church receives: amount minus both fees
  *
- * Auth: protect + requireActiveMembership
+ * EXAMPLE — Member gives £100:
+ *   Platform fee:  £1.50  → Churza
+ *   Stripe fee:    £1.70  → Stripe
+ *   Church gets:   £96.80
+ *
+ * Body:
+ *   amount   — integer in pence/cents (e.g. 10000 = £100.00)
+ *   currency — optional, defaults to church currency
+ *   type     — tithe | offering | seed | donation | building | missions
+ *   note     — optional message from giver
  */
 const createPaymentIntent = catchAsync(async (req, res) => {
     const { amount, currency, type, note } = req.body;
 
-    if (!amount || amount < 100) {
-        return errorResponse(res, 400, 'Minimum amount is 1.00');
+    // ── Validation ──────────────────────────────────────────
+    if (!amount || !Number.isInteger(amount) || amount < 100) {
+        return errorResponse(res, 400, 'Minimum giving amount is £1.00');
     }
 
-    const church = await Church.findById(req.params.churchId);
-    if (!church) return errorResponse(res, 404, 'Church not found');
+    const validTypes = ['tithe', 'offering', 'seed', 'donation', 'building', 'missions'];
+    const givingType = validTypes.includes(type) ? type : 'offering';
+
+    // ── Church checks ───────────────────────────────────────
+    const church = await Church.findById(req.params.churchId)
+        .select('name settings');
+
+    if (!church) {
+        return errorResponse(res, 404, 'Church not found');
+    }
 
     if (!church.settings?.givingEnabled) {
-        return errorResponse(res, 400, 'Online giving is not enabled for this church');
+        return errorResponse(res, 400,
+            'Online giving is not enabled for this church. Please contact your pastor.');
     }
 
     if (!church.settings?.stripeAccountId) {
-        return errorResponse(res, 400, 'Church has not connected a payment account');
+        return errorResponse(res, 400,
+            'This church has not set up online giving yet. Please contact your pastor.');
     }
 
-    // 1.5% platform fee
-    const platformFee = Math.round(amount * 0.015);
+    // ── Fee calculation ─────────────────────────────────────
+    // Platform fee: 1.5% of the giving amount
+    // Minimum fee: 30p to cover our costs on small gifts
+    const PLATFORM_FEE_PERCENT = 0.015;
+    const MINIMUM_PLATFORM_FEE = 30; // pence
 
+    const platformFee = Math.max(
+        Math.round(amount * PLATFORM_FEE_PERCENT),
+        MINIMUM_PLATFORM_FEE
+    );
+
+    // ── Currency ────────────────────────────────────────────
+    const givingCurrency = (
+        currency ||
+        church.settings?.currency ||
+        'gbp'
+    ).toLowerCase();
+
+    // ── Create PaymentIntent ────────────────────────────────
     const paymentIntent = await stripe.paymentIntents.create({
         amount,
-        currency: (currency || church.settings.currency || 'gbp').toLowerCase(),
+        currency: givingCurrency,
+
+        // Platform fee — Churza earns this on every transaction
         application_fee_amount: platformFee,
+
+        // Funds go directly to the church's connected Stripe account
         transfer_data: {
             destination: church.settings.stripeAccountId,
         },
+
+        // Metadata — stored on Stripe dashboard for reconciliation
         metadata: {
             churchId: church._id.toString(),
             churchName: church.name,
             userId: req.user._id.toString(),
+            userEmail: req.user.email,
             userName: `${req.user.firstName} ${req.user.lastName}`,
-            givingType: type || 'offering',
-            note: note || '',
+            givingType,
+            note: note?.trim() || '',
+            platformFee: platformFee.toString(),
+            environment: process.env.NODE_ENV || 'development',
         },
-        description: `${type || 'Offering'} — ${church.name}`,
+
+        description: `${_capitalise(givingType)} — ${church.name}`,
+        receipt_email: req.user.email, // Stripe sends a receipt automatically
     });
 
+    // ── Respond ─────────────────────────────────────────────
     res.json({
         success: true,
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
         amount,
         currency: paymentIntent.currency,
+        platformFee,
+        breakDown: {
+            giving: amount,
+            platformFee,
+            total: amount, // member pays exactly what they typed
+        },
     });
 });
+
+// ── Helper ────────────────────────────────────────────────
+const _capitalise = (str) =>
+    str.charAt(0).toUpperCase() + str.slice(1);
 
 /**
  * POST /api/payments/:churchId/confirm

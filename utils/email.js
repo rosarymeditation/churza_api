@@ -167,6 +167,31 @@ const welcomeOptions = (recipient, firstName, churchName, tempPassword) => ({
   `, churchName),
 });
 
+const stripeConnectedOptions = (recipient, firstName, churchName) => ({
+  from: `"Churza" <${process.env.EMAIL_FROM || process.env.SMTP_USER}>`,
+  to: recipient,
+  subject: 'Online giving is now live on Churza',
+  html: _wrap(`
+    <h2>Online giving is active! 🎉</h2>
+    <p>Hello ${firstName},</p>
+    <p>${churchName} can now receive online tithes and offerings through Churza.</p>
+
+    <p><strong>Fee structure:</strong></p>
+    <div class="credentials">
+      <p>Churza platform fee: <strong>1.5%</strong></p>
+      <p>Stripe processing fee: <strong>1.5% + 20p</strong></p>
+      <p>Total deducted: <strong>~3% + 20p per transaction</strong></p>
+    </div>
+
+    <p><strong>Example:</strong> On a £100 gift, ${churchName} receives approximately <strong>£96.80</strong>.</p>
+
+    <p>Funds are paid out to your bank account on a rolling basis by Stripe, 
+    typically within 2–7 business days.</p>
+
+    <p>You can view all transactions in the Churza admin panel under Giving.</p>
+  `, churchName),
+});
+
 /**
  * membershipApprovedOptions — Sent when admin approves a pending member.
  */

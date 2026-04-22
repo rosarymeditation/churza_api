@@ -163,10 +163,21 @@ const requireActiveMembership = catchAsync(async (req, res, next) => {
     req.churchId = churchId;
     next();
 });
+const optionalAuth = async (req, res, next) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        if (token) {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            req.user = await User.findById(decoded.id).select('-passwordHash');
+        }
+    } catch (_) { }
+    next();
+};
 
 module.exports = {
     protect,
     restrictTo,
     requireChurchRole,
     requireActiveMembership,
+    optionalAuth
 };
