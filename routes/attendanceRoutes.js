@@ -5,6 +5,8 @@ const { protect, requireChurchRole, requireActiveMembership } =
     require('../middleware/auth');
 
 // Member routes
+router.get('/me/today', protect, requireActiveMembership,
+    ctrl.getMyAttendanceToday);
 router.get('/session', protect, requireActiveMembership, ctrl.getActiveSession);
 router.post('/checkin', protect, requireActiveMembership, ctrl.checkIn);
 

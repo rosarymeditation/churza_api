@@ -28,7 +28,7 @@ exports.startSession = catchAsync(async (req, res) => {
     isActive: true,
   });
 
-  // ── Notify all members that check-in is now open ──────
+  // Notify all members that check-in is now open
   notifyCheckInOpened({
     churchId: churchId,
     sessionTitle: session.title,
@@ -58,6 +58,25 @@ exports.getActiveSession = catchAsync(async (req, res) => {
   }).populate('startedBy', 'firstName lastName');
 
   res.json({ success: true, session: session || null });
+});
+
+// ── Member — check if already checked in today ────────────
+// Called by the Flutter home screen on load to determine
+// whether to show the gold "tap to check in" banner
+// or the green "attendance recorded" banner.
+exports.getMyAttendanceToday = catchAsync(async (req, res) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  const record = await Attendance.findOne({
+    church: req.params.churchId,
+    user: req.user._id,
+    checkedInAt: { $gte: today, $lt: tomorrow },
+  }).lean();
+
+  res.json({ success: true, attendance: record || null });
 });
 
 // ── One-tap check-in ──────────────────────────────────────
