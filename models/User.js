@@ -52,6 +52,17 @@ const userSchema = new mongoose.Schema(
     },
 
     pushToken: { type: String, default: null },
+    notificationPreferences: {
+      announcements: { type: Boolean, default: true },
+      sermons: { type: Boolean, default: true },
+      events: { type: Boolean, default: true },
+      liveStream: { type: Boolean, default: true },
+      checkIn: { type: Boolean, default: true },
+      prayer: { type: Boolean, default: true },
+      cellGroup: { type: Boolean, default: true },
+      giving: { type: Boolean, default: true },
+      membership: { type: Boolean, default: true },
+    },
     isAdminCreated: {
       type: Boolean,
       default: false,

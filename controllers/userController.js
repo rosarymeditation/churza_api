@@ -788,7 +788,43 @@ const submitFeedback= async(req, res)=>{
 // ─────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────
+const getNotificationPreferences = catchAsync(async (req, res) => {
+    const user = await User.findById(req.user._id)
+        .select('notificationPreferences');
 
+    res.json({
+        success: true,
+        preferences: user.notificationPreferences ?? {},
+    });
+});
+
+const updateNotificationPreferences = catchAsync(async (req, res) => {
+    const allowed = [
+        'announcements', 'sermons', 'events', 'liveStream',
+        'checkIn', 'prayer', 'cellGroup', 'giving', 'membership',
+    ];
+
+    const updates = {};
+    allowed.forEach((key) => {
+        if (typeof req.body[key] === 'boolean') {
+            updates[`notificationPreferences.${key}`] = req.body[key];
+        }
+    });
+
+    if (Object.keys(updates).length === 0) {
+        return res.status(400).json({
+            success: false, message: 'No valid preferences provided',
+        });
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user._id,
+        { $set: updates },
+        { new: true }
+    ).select('notificationPreferences');
+
+    res.json({ success: true, preferences: user.notificationPreferences });
+});
 module.exports = {
     // Auth
     register,
@@ -812,5 +848,7 @@ module.exports = {
     setUserStatus,
     verifyResetCode,
     uploadPhoto,
-    submitFeedback
+    submitFeedback,
+    getNotificationPreferences,
+    updateNotificationPreferences
 };

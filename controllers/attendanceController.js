@@ -1,11 +1,10 @@
 const Attendance = require('../models/Attendance');
 const AttendanceSession = require('../models/AttendanceSession');
 const Membership = require('../models/Membership');
+const { notifyCheckInOpened } = require('../utils/churchNotifications');
 
-// ── Same helpers as userController.js ─────────────────────
-const catchAsync = (fn) => (req, res, next) => {
+const catchAsync = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
-};
 
 const errorResponse = (res, statusCode, message) =>
   res.status(statusCode).json({ success: false, message });
@@ -15,6 +14,7 @@ exports.startSession = catchAsync(async (req, res) => {
   const { title, serviceType } = req.body;
   const churchId = req.params.churchId;
 
+  // Close any existing active session first
   await AttendanceSession.updateMany(
     { church: churchId, isActive: true },
     { isActive: false, endedAt: new Date() }
@@ -26,6 +26,12 @@ exports.startSession = catchAsync(async (req, res) => {
     serviceType: serviceType || 'sunday',
     startedBy: req.user._id,
     isActive: true,
+  });
+
+  // ── Notify all members that check-in is now open ──────
+  notifyCheckInOpened({
+    churchId: churchId,
+    sessionTitle: session.title,
   });
 
   res.status(201).json({ success: true, session });
@@ -131,7 +137,10 @@ exports.getReport = catchAsync(async (req, res) => {
     if (session) {
       const start = new Date(session.startedAt);
       start.setHours(0, 0, 0, 0);
-      filter.checkedInAt = { $gte: start, $lte: session.endedAt || new Date() };
+      filter.checkedInAt = {
+        $gte: start,
+        $lte: session.endedAt || new Date(),
+      };
     }
   }
 
@@ -173,7 +182,9 @@ exports.usherCheckIn = catchAsync(async (req, res) => {
     status: 'active',
   });
 
-  if (!membership) return errorResponse(res, 404, 'Member not found in this church');
+  if (!membership) {
+    return errorResponse(res, 404, 'Member not found in this church');
+  }
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);

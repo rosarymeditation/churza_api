@@ -20,7 +20,10 @@ const {
     setUserStatus,
     verifyResetCode,
     uploadPhoto,
-    submitFeedback
+    submitFeedback,
+    getNotificationPreferences,
+    updateNotificationPreferences
+
 } = require('../controllers/userController');
 
 const {
@@ -50,7 +53,8 @@ router.patch('/users/me', updateMe);
 router.delete('/users/me', deleteMe);
 router.patch('/users/me/push-token', updatePushToken);
 router.get('/users/me/notifications', getMyNotifications);
-
+router.patch('/users/me/notification-preferences', protect, updateNotificationPreferences);
+router.get('/users/me/notification-preferences', protect, getNotificationPreferences);
 // ─────────────────────────────────────────────────────────
 // Super admin only routes
 // ─────────────────────────────────────────────────────────

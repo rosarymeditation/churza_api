@@ -49,39 +49,46 @@ const User = require('../models/User');
  *     data:    { screen: 'CellChat', cellGroupId: '64abc...' },
  *   });
  */
-const sendPushNotification = async ({ userIds, title, body, data = {} }) => {
+const sendPushNotification = async ({
+  userIds,
+  title,
+  body,
+  data = {},
+  category, // ← new — matches notificationPreferences keys
+}) => {
   try {
     if (!userIds || userIds.length === 0) return;
 
-    // Fetch OneSignal player IDs for these users
-    // Users who have not granted notification permission will have no pushToken
-    const users = await User.find(
-      { _id: { $in: userIds }, pushToken: { $exists: true, $ne: null } },
-      'pushToken'
-    ).lean();
-
-    const playerIds = users
-      .map((u) => u.pushToken)
-      .filter(Boolean);
-
-    if (playerIds.length === 0) return;
-
-    // Build the OneSignal notification payload
-    const notification = {
-      app_id: process.env.ONESIGNAL_APP_ID,
-      include_player_ids: playerIds,       // Which devices to notify
-      headings: { en: title },            // Bold title
-      contents: { en: body },             // Message body
-      data,                                // Extra data Flutter reads on tap
-      ios_badgeType: 'Increase',         // Increment the badge count on iOS
-      ios_badgeCount: 1,
-      android_group: data.screen || 'churza', // Group notifications on Android
-      priority: 10,                 // High priority — deliver immediately
+    // Build query — only users who have a push token
+    // AND have not opted out of this notification category
+    const query = {
+      _id: { $in: userIds },
+      pushToken: { $exists: true, $ne: null },
     };
 
-    // Send to OneSignal REST API
-    const jsonPayload = JSON.stringify(notification);
+    // If a category is provided, filter out users who opted out
+    if (category) {
+      query[`notificationPreferences.${category}`] = { $ne: false };
+    }
 
+    const users = await User.find(query, 'pushToken').lean();
+
+    const playerIds = users.map((u) => u.pushToken).filter(Boolean);
+    if (playerIds.length === 0) return;
+
+    const notification = {
+      app_id: process.env.ONESIGNAL_APP_ID,
+      include_player_ids: playerIds,
+      headings: { en: title },
+      contents: { en: body },
+      data,
+      ios_badgeType: 'Increase',
+      ios_badgeCount: 1,
+      android_group: data.screen || 'churza',
+      priority: 10,
+    };
+
+    const jsonPayload = JSON.stringify(notification);
     const options = {
       hostname: 'onesignal.com',
       port: 443,
@@ -94,18 +101,11 @@ const sendPushNotification = async ({ userIds, title, body, data = {} }) => {
       },
     };
 
-    // Make the HTTPS request to OneSignal
     await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
-        let responseData = '';
-        res.on('data', (chunk) => (responseData += chunk));
-        res.on('end', () => {
-          const parsed = JSON.parse(responseData);
-          if (parsed.errors) {
-            console.warn('OneSignal warning:', parsed.errors);
-          }
-          resolve(parsed);
-        });
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => resolve(JSON.parse(data)));
       });
       req.on('error', reject);
       req.write(jsonPayload);
@@ -113,11 +113,78 @@ const sendPushNotification = async ({ userIds, title, body, data = {} }) => {
     });
 
   } catch (err) {
-    // Non-critical — if push fails, the message is still delivered via socket
-    // We log the error but do not throw, so chat still works
     console.error('Push notification failed:', err.message);
   }
 };
+// const sendPushNotification = async ({ userIds, title, body, data = {} }) => {
+//   try {
+//     if (!userIds || userIds.length === 0) return;
+
+//     // Fetch OneSignal player IDs for these users
+//     // Users who have not granted notification permission will have no pushToken
+//     const users = await User.find(
+//       { _id: { $in: userIds }, pushToken: { $exists: true, $ne: null } },
+//       'pushToken'
+//     ).lean();
+
+//     const playerIds = users
+//       .map((u) => u.pushToken)
+//       .filter(Boolean);
+
+//     if (playerIds.length === 0) return;
+
+//     // Build the OneSignal notification payload
+//     const notification = {
+//       app_id: process.env.ONESIGNAL_APP_ID,
+//       include_player_ids: playerIds,       // Which devices to notify
+//       headings: { en: title },            // Bold title
+//       contents: { en: body },             // Message body
+//       data,                                // Extra data Flutter reads on tap
+//       ios_badgeType: 'Increase',         // Increment the badge count on iOS
+//       ios_badgeCount: 1,
+//       android_group: data.screen || 'churza', // Group notifications on Android
+//       priority: 10,                 // High priority — deliver immediately
+//     };
+
+//     // Send to OneSignal REST API
+//     const jsonPayload = JSON.stringify(notification);
+
+//     const options = {
+//       hostname: 'onesignal.com',
+//       port: 443,
+//       path: '/api/v1/notifications',
+//       method: 'POST',
+//       headers: {
+//         'Content-Type': 'application/json',
+//         'Authorization': `Basic ${process.env.ONESIGNAL_API_KEY}`,
+//         'Content-Length': Buffer.byteLength(jsonPayload),
+//       },
+//     };
+
+//     // Make the HTTPS request to OneSignal
+//     await new Promise((resolve, reject) => {
+//       const req = https.request(options, (res) => {
+//         let responseData = '';
+//         res.on('data', (chunk) => (responseData += chunk));
+//         res.on('end', () => {
+//           const parsed = JSON.parse(responseData);
+//           if (parsed.errors) {
+//             console.warn('OneSignal warning:', parsed.errors);
+//           }
+//           resolve(parsed);
+//         });
+//       });
+//       req.on('error', reject);
+//       req.write(jsonPayload);
+//       req.end();
+//     });
+
+//   } catch (err) {
+//     // Non-critical — if push fails, the message is still delivered via socket
+//     // We log the error but do not throw, so chat still works
+//     console.error('Push notification failed:', err.message);
+//   }
+// };
 
 /**
  * savePushToken — Save a user's OneSignal player ID to MongoDB.
