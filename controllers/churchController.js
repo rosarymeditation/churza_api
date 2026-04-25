@@ -323,7 +323,7 @@ const joinByCode = catchAsync(async (req, res) => {
     user: req.user._id,
     church: church._id,
     role: 'member',
-    status: autoApprove ? 'active' : 'pending',
+    status: 'active',
     joinedAt: autoApprove ? new Date() : undefined,
     approvedAt: autoApprove ? new Date() : undefined,
   });
