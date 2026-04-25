@@ -82,7 +82,7 @@ const notifyNewMemberRequest = async ({ churchId, memberName, membershipId }) =>
     await sendPushNotification({
         userIds: adminIds,
         title: 'New membership request',
-        body: `${memberName} wants to join your church.`,
+        body: `${memberName} has joined your church.`,
         data: { screen: 'MemberDetail', id: membershipId },
     });
 };

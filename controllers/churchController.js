@@ -345,8 +345,8 @@ const joinByCode = catchAsync(async (req, res) => {
         user: a.user,
         church: church._id,
         type: 'member_joined',
-        title: 'New member request',
-        body: `${req.user.firstName} ${req.user.lastName} wants to join ${church.name}`,
+        title: 'New member',
+        body: `${req.user.firstName} ${req.user.lastName} has joined ${church.name}`,
         data: { screen: 'MemberDetail', membershipId: membership._id },
       }))
     );
