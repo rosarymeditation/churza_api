@@ -1,13 +1,7 @@
-/**
- * rentflow/routes/stripeRoutes.js
- * Mounted at: /api/stripe
- */
-const express = require("express");
-const router = express.Router();
-const sc = require("../controllers/stripeController");
+const controller = require("../controllers/paymentController");
+const { rootUrl } = require("../utils/constants");
 const { protect } = require("../middleware/auth");
 
-router.post("/connect", protect, sc.connectStripe);
-router.get("/status", protect, sc.getStripeStatus);
-
-module.exports = router;
+module.exports = (app) => {
+    app.post(rootUrl("/connect"), protect, controller.connectStripe);
+};

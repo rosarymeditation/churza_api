@@ -1,20 +1,14 @@
-/**
- * rentflow/routes/paymentLinkRoutes.js
- * Mounted at: /api/payment-links
- */
-const express = require("express");
-const router = express.Router();
-const plc = require("../controllers/paymentLinkController");
-const { protect, requireStripeOnboarding } = require("../middleware/auth");
+// const controller = require("../controllers/paymentLinkController");
+// const { rootUrl } = require("../utils/constants");
+// const { protect, requireStripeOnboarding } = require("../middleware/auth");
 
-// PUBLIC — tenant opens this in a browser (no login needed)
-router.get("/:shortCode/pay", plc.openPaymentLink);
+// module.exports = (app) => {
+//     // PUBLIC — tenant opens this in a browser (no login needed)
+//     app.get(rootUrl("/:shortCode/pay"), controller.openPaymentLink);
 
-// PROTECTED — landlord manages links
-router.use(protect);
-router.get("/", plc.getPaymentLinks);
-router.post("/", requireStripeOnboarding, plc.createPaymentLink);
-router.post("/:id/share", plc.sharePaymentLink);
-router.delete("/:id", plc.cancelPaymentLink);
-
-module.exports = router;
+//     // PROTECTED — landlord manages links
+//     app.get(rootUrl("/"), protect, controller.getPaymentLinks);
+//     app.post(rootUrl("/"), protect, requireStripeOnboarding, controller.createPaymentLink);
+//     app.post(rootUrl("/:id/share"), protect, controller.sharePaymentLink);
+//     app.delete(rootUrl("/:id"), protect, controller.cancelPaymentLink);
+// };

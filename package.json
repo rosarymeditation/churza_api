@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+     "test": "jest",
     "dev": "nodemon server.js"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "zod": "^3.21.4"
   },
   "devDependencies": {
+    "jest": "^30.5.1",
     "nodemon": "^3.0.1"
   }
 }

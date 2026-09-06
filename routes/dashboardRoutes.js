@@ -1,12 +1,7 @@
-/**
- * rentflow/routes/dashboardRoutes.js
- * Mounted at: /api/dashboard
- */
-const express = require("express");
-const router = express.Router();
-const dc = require("../controllers/dashboardController");
+const controller = require("../controllers/churchController");
+const { rootUrl } = require("../utils/constants");
 const { protect } = require("../middleware/auth");
 
-router.get("/", protect, dc.getDashboard);
-
-module.exports = router;
+module.exports = (app) => {
+    app.get(rootUrl("/"), protect, controller.getDashboard);
+};

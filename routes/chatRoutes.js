@@ -1,21 +1,16 @@
-const express = require('express');
-const router = express.Router();
-const { protect, requireChurchRole, requireActiveMembership } = require('../middleware/auth');
-const upload = require('../middleware/upload');
-const c = require('../controllers/chatController');
+const controller = require("../controllers/chatController");
+const { rootUrl } = require("../utils/constants");
+const { protect, requireChurchRole, requireActiveMembership } = require("../middleware/auth");
+const upload = require("../middleware/upload");
 
-router.post('/churches/:churchId/groups', protect, requireChurchRole('admin', 'pastor'), c.createCellGroup);
-router.get('/churches/:churchId/groups', protect, requireActiveMembership, c.getCellGroups);
-router.get('/churches/:churchId/groups/:groupId', protect, requireActiveMembership, c.getCellGroup);
-router.patch('/churches/:churchId/groups/:groupId', protect, requireChurchRole('admin', 'pastor'), c.updateCellGroup);
-router.patch('/churches/:churchId/groups/:groupId/members', protect, requireChurchRole('admin', 'pastor'), c.updateGroupMembers);
-router.get('/churches/:churchId/groups/:groupId/messages', protect, requireActiveMembership, c.getMessages);
-router.post('/churches/:churchId/groups/:groupId/upload', protect, requireActiveMembership, upload.single('file'), c.uploadFile);
-router.delete('/churches/:churchId/groups/:groupId/messages/:messageId', protect, requireActiveMembership, c.deleteMessage);
-router.patch(
-    '/churches/:churchId/groups/:groupId/leader',
-    protect,
-    requireChurchRole('admin', 'pastor'),
-    c.assignLeader
-);
-module.exports = router;
+module.exports = (app) => {
+    app.post(rootUrl("/churches/:churchId/groups"), protect, requireChurchRole("admin", "pastor"), controller.createCellGroup);
+    app.get(rootUrl("/churches/:churchId/groups"), protect, requireActiveMembership, controller.getCellGroups);
+    app.get(rootUrl("/churches/:churchId/groups/:groupId"), protect, requireActiveMembership, controller.getCellGroup);
+    app.patch(rootUrl("/churches/:churchId/groups/:groupId"), protect, requireChurchRole("admin", "pastor"), controller.updateCellGroup);
+    app.patch(rootUrl("/churches/:churchId/groups/:groupId/members"), protect, requireChurchRole("admin", "pastor"), controller.updateGroupMembers);
+    app.get(rootUrl("/churches/:churchId/groups/:groupId/messages"), protect, requireActiveMembership, controller.getMessages);
+    app.post(rootUrl("/churches/:churchId/groups/:groupId/upload"), protect, requireActiveMembership, upload.single("file"), controller.uploadFile);
+    app.delete(rootUrl("/churches/:churchId/groups/:groupId/messages/:messageId"), protect, requireActiveMembership, controller.deleteMessage);
+    app.patch(rootUrl("/churches/:churchId/groups/:groupId/leader"), protect, requireChurchRole("admin", "pastor"), controller.assignLeader);
+};

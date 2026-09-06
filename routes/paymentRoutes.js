@@ -1,93 +1,28 @@
-const express = require('express');
-const router = express.Router();
-const {
-    protect,
-    requireChurchRole,
-    requireActiveMembership,
-} = require('../middleware/auth');
-const c = require('../controllers/paymentController');
+const controller = require("../controllers/paymentController");
+const { rootUrl } = require("../utils/constants");
+const { protect, requireChurchRole, requireActiveMembership } = require("../middleware/auth");
+const express = require("express");
 
-// ─────────────────────────────────────────────────────────
-// Stripe webhook — no auth, raw body
-// Must be registered BEFORE express.json() middleware
-// Mount this in server.js BEFORE app.use(express.json())
-// ─────────────────────────────────────────────────────────
-router.post(
-    '/webhook',
-    express.raw({ type: 'application/json' }),
-    c.handleWebhook
-);
+module.exports = (app) => {
+    // Stripe webhook — no auth, raw body (see warning below)
+    app.post(
+        rootUrl("/webhook"),
+        express.raw({ type: "application/json" }),
+        controller.handleWebhook
+    );
 
-// ─────────────────────────────────────────────────────────
-// Stripe Connect — admin onboards their church
-// ─────────────────────────────────────────────────────────
-router.post(
-    '/:churchId/connect',
-    protect,
-    requireChurchRole('admin'),
-    c.connectStripe
-);
+    // Stripe Connect — admin onboards their church
+    app.post(rootUrl("/:churchId/connect"), protect, requireChurchRole("admin"), controller.connectStripe);
+    app.get(rootUrl("/:churchId/connect/status"), protect, requireChurchRole("admin", "pastor"), controller.connectStatus);
+    app.delete(rootUrl("/:churchId/connect"), protect, requireChurchRole("admin"), controller.disconnectStripe);
 
-router.get(
-    '/:churchId/connect/status',
-    protect,
-    requireChurchRole('admin', 'pastor'),
-    c.connectStatus
-);
+    // Member giving — create intent and confirm
+    app.post(rootUrl("/:churchId/intent"), protect, requireActiveMembership, controller.createPaymentIntent);
+    app.post(rootUrl("/:churchId/confirm"), protect, requireActiveMembership, controller.confirmPayment);
+    app.get(rootUrl("/:churchId/history/me"), protect, requireActiveMembership, controller.myGivingHistory);
 
-router.delete(
-    '/:churchId/connect',
-    protect,
-    requireChurchRole('admin'),
-    c.disconnectStripe
-);
-
-// ─────────────────────────────────────────────────────────
-// Member giving — create intent and confirm
-// ─────────────────────────────────────────────────────────
-router.post(
-    '/:churchId/intent',
-    protect,
-    requireActiveMembership,
-    c.createPaymentIntent
-);
-
-router.post(
-    '/:churchId/confirm',
-    protect,
-    requireActiveMembership,
-    c.confirmPayment
-);
-
-router.get(
-    '/:churchId/history/me',
-    protect,
-    requireActiveMembership,
-    c.myGivingHistory
-);
-
-// ─────────────────────────────────────────────────────────
-// Admin — giving management
-// ─────────────────────────────────────────────────────────
-router.get(
-    '/:churchId/overview',
-    protect,
-    requireChurchRole('admin', 'pastor'),
-    c.givingOverview
-);
-
-router.get(
-    '/:churchId/transactions',
-    protect,
-    requireChurchRole('admin', 'pastor'),
-    c.allTransactions
-);
-
-router.post(
-    '/:churchId/cash',
-    protect,
-    requireChurchRole('admin', 'pastor', 'worker'),
-    c.recordCash
-);
-
-module.exports = router;
+    // Admin — giving management
+    app.get(rootUrl("/:churchId/overview"), protect, requireChurchRole("admin", "pastor"), controller.givingOverview);
+    app.get(rootUrl("/:churchId/transactions"), protect, requireChurchRole("admin", "pastor"), controller.allTransactions);
+    app.post(rootUrl("/:churchId/cash"), protect, requireChurchRole("admin", "pastor", "worker"), controller.recordCash);
+};

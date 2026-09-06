@@ -1,20 +1,17 @@
-const express = require('express');
-const router = express.Router({ mergeParams: true });
-const ctrl = require('../controllers/attendanceController');
-const { protect, requireChurchRole, requireActiveMembership } =
-    require('../middleware/auth');
+const controller = require("../controllers/attendanceController");
+const { rootUrl } = require("../utils/constants");
+const { protect, requireChurchRole, requireActiveMembership } = require("../middleware/auth");
 
-// Member routes
-router.get('/me/today', protect, requireActiveMembership,
-    ctrl.getMyAttendanceToday);
-router.get('/session', protect, requireActiveMembership, ctrl.getActiveSession);
-router.post('/checkin', protect, requireActiveMembership, ctrl.checkIn);
+module.exports = (app) => {
+    // Member routes
+    app.get(rootUrl("/me/today"), protect, requireActiveMembership, controller.getMyAttendanceToday);
+    app.get(rootUrl("/session"), protect, requireActiveMembership, controller.getActiveSession);
+    app.post(rootUrl("/checkin"), protect, requireActiveMembership, controller.checkIn);
 
-// Admin / pastor routes
-router.post('/start', protect, requireChurchRole('admin', 'pastor'), ctrl.startSession);
-router.post('/end', protect, requireChurchRole('admin', 'pastor'), ctrl.endSession);
-router.post('/usher', protect, requireChurchRole('admin', 'pastor', 'cell_leader'), ctrl.usherCheckIn);
-router.get('/', protect, requireChurchRole('admin', 'pastor'), ctrl.getReport);
-router.get('/sessions', protect, requireChurchRole('admin', 'pastor'), ctrl.getSessions);
-
-module.exports = router;
+    // Admin / pastor routes
+    app.post(rootUrl("/start"), protect, requireChurchRole("admin", "pastor"), controller.startSession);
+    app.post(rootUrl("/end"), protect, requireChurchRole("admin", "pastor"), controller.endSession);
+    app.post(rootUrl("/usher"), protect, requireChurchRole("admin", "pastor", "cell_leader"), controller.usherCheckIn);
+    app.get(rootUrl("/"), protect, requireChurchRole("admin", "pastor"), controller.getReport);
+    app.get(rootUrl("/sessions"), protect, requireChurchRole("admin", "pastor"), controller.getSessions);
+};
