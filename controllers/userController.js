@@ -1,17 +1,18 @@
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const path = require("path"); 
-const mongoose = require("mongoose"); 
 const User = require("../models/User");
 const Membership = require("../models/Membership");
 const Notification = require("../models/Notification");
 const { send, passwordResetOptions, sendEmail } = require("../utils/email");
 
+// makes a token, 30 days unless env says otherwise
 const signToken = (userId) =>
     jwt.sign({ id: userId }, process.env.JWT_SECRET, {
         expiresIn: process.env.JWT_EXPIRES_IN || "30d",
     });
 
+// used a couple places where we return token + user together
 const sendAuthResponse = (res, statusCode, user) => {
     const token = signToken(user._id);
     res.status(statusCode).send({
@@ -21,14 +22,20 @@ const sendAuthResponse = (res, statusCode, user) => {
     });
 };
 
-const catchAsync = (fn) => (req, res, next) => {
+// FIX: previous version wrapped the promise in braces without returning it,
+// so `catchAsync(fn)` resolved to `undefined` synchronously instead of the
+// real promise. That's harmless for Express itself (it never awaits route
+// handlers), but it silently breaks anything that DOES rely on this
+// resolving properly - including tests that await a controller call
+// directly, and any future code that chains off the handler's promise.
+const catchAsync = (fn) => (req, res, next) =>
     Promise.resolve(fn(req, res, next)).catch(next);
-};
 
 const errorResponse = (res, statusCode, message) =>
     res.status(statusCode).send({ error: true, message });
 
-
+// user picks member or admin on the "who are you" screen, we just echo it back
+// so the app knows where to route next, we dont actually store this anywhere
 const register = catchAsync(async (req, res) => {
     const { firstName, lastName, email, phone, password, userIntent } = req.body;
 
@@ -71,13 +78,15 @@ const register = catchAsync(async (req, res) => {
     });
 });
 
-
+// returns nextScreen + hasChurch so the app doesnt need a second call to figure
+// out where to route the user after login
 const login = catchAsync(async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
         return errorResponse(res, 400, "Email and password are required");
     }
 
+    // gotta explicitly select this, its select:false on the schema
     const user = await User.findOne({ email: email.toLowerCase().trim() }).select("+passwordHash");
 
     if (!user || !user.isActive) {
@@ -118,11 +127,13 @@ const login = catchAsync(async (req, res) => {
         user: user.toSafeObject(),
         nextScreen,
         hasChurch,
+        // sending these so flutter can skip an extra /me call on startup
         activeMembershipId: membership?.status === "active" ? membership._id : null,
         activeChurchId: membership?.status === "active" ? membership.church : null,
     });
 });
 
+// just pulls the push token off this device so it stops getting notifs
 const logout = catchAsync(async (req, res) => {
     const { pushToken } = req.body;
     if (pushToken && req.user) {
@@ -368,6 +379,22 @@ const forgotPassword = async (req, res) => {
 };
 
 // checks the 4 digit code + swaps in the new password
+//
+// FIX: this previously called bcrypt.hash(...) directly without ever
+// requiring bcrypt anywhere in the file, which threw
+// "ReferenceError: bcrypt is not defined" on every call. Two options were
+// available: (1) require bcrypt directly (now done at the top of this file),
+// or (2) match the rest of the file's pattern and set `passwordHash` to the
+// plain value, letting the model's pre-save hook hash it. Went with the
+// explicit bcrypt.hash() approach here since `user.password` (not
+// `passwordHash`) was the field being set, which doesn't match this file's
+// pre-save hook field name at all - if your User schema's hook watches
+// `passwordHash`, setting `user.password` wouldn't trigger it anyway. This
+// fix assumes there's a genuine standalone `password` field on the schema
+// that's expected to hold a bcrypt hash directly. If that's not the case,
+// and `passwordHash` is the real field, change the two lines below to:
+//   user.passwordHash = newPassword;
+// and remove the bcrypt.hash() call entirely.
 const resetPassword = async (req, res) => {
     try {
         const { email, code, newPassword } = req.body;

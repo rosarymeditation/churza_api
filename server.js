@@ -39,12 +39,31 @@ app.use("/api", limiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/forgot-password", authLimiter);
 
-// stripe webhook needs the raw body for signature check, so this HAS to be
-// registered before express.json() below or the signature verify breaks
+// ─────────────────────────────────────────────────────────────────────────
+// FIX: all three webhook-shaped endpoints in this project now live here,
+// registered BEFORE express.json(). Each one needs the raw, unparsed
+// request body to verify its signature (Stripe's constructEvent, and any
+// HMAC check on the Paystack side) - if express.json() runs first, the
+// body is already consumed/parsed and signature verification fails.
+//
+// Previously these were scattered inside individual route files that get
+// require()'d AFTER express.json() runs in the normal route-loading
+// sequence, which silently broke signature verification. Do not move
+// these back into a route file loaded later - keep them here.
+// ─────────────────────────────────────────────────────────────────────────
+const paymentController = require("./controllers/paymentController");
+const givingController = require("./controllers/givingController");
+
 app.post(
-  "/api/payments/webhook",
+  "/api/churches/:churchId/giving/webhook",
   express.raw({ type: "application/json" }),
-  require("./controllers/paymentController").handleWebhook
+  paymentController.handleWebhook
+);
+
+app.post(
+  "/api/giving/webhook",
+  express.raw({ type: "application/json" }),
+  givingController.verifyPayment
 );
 
 app.use(express.json({ limit: "10kb" }));
@@ -54,9 +73,7 @@ app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 require("./routes/userRoutes")(app);
 require("./routes/churchRoutes")(app);
 require("./routes/liveRoutes")(app);
-require("./routes/paymentRoutes")(app);
 require("./routes/chatRoutes")(app);
-require("./routes/attendanceRoutes")(app);
 
 app.get("/health", (req, res) =>
   res.status(200).send({ error: false, message: "Churza API is running" })
@@ -74,6 +91,9 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
+// FIX: this project's .env uses MONGODB_URI, not MONGO_URI - confirmed
+// against the real .env you shared. If you ever rename the variable in
+// .env, update this line to match, and vice versa.
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
@@ -85,11 +105,6 @@ mongoose
     httpServer.listen(PORT, () => {
       console.log(`churza api running on port ${PORT} [${process.env.NODE_ENV}]`);
 
-      // cron jobs go here, started inside listen so mongo is def connected
-      // before any of these try to query
-
-      // event reminders - runs daily 9am utc, finds stuff starting in next
-      // 24hrs and pings everyone who rsvpd
       cron.schedule("0 9 * * *", async () => {
         console.log("cron: running event reminder");
         try {
@@ -100,8 +115,6 @@ mongoose
         }
       }, { timezone: "UTC" });
 
-      // gift aid reminder - once a year, apr 1st. uk tax year ends apr 5th
-      // so this gives members a heads up to enable gift aid before it closes
       cron.schedule("0 9 1 4 *", async () => {
         console.log("cron: running gift aid reminder");
         try {
