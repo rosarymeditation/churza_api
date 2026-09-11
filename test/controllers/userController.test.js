@@ -11,6 +11,7 @@ function mockRes() {
   const res = {};
   res.status = jest.fn().mockReturnValue(res);
   res.send = jest.fn().mockReturnValue(res);
+  res.json = jest.fn().mockReturnValue(res); // FIX: userController uses res.json(), not res.send()
   return res;
 }
 
@@ -103,7 +104,7 @@ describe("userController.register", () => {
     await flushPromises();
 
     expect(res.status).toHaveBeenCalledWith(201);
-    const payload = res.send.mock.calls[0][0];
+    const payload = res.json.mock.calls[0][0]; // FIX: was res.send
     expect(payload.nextScreen).toBe("join_church");
     expect(payload.hasChurch).toBe(false);
   });
@@ -129,7 +130,7 @@ describe("userController.register", () => {
     expect(User.create).toHaveBeenCalledWith(
       expect.objectContaining({ systemRole: "admin" })
     );
-    const payload = res.send.mock.calls[0][0];
+    const payload = res.json.mock.calls[0][0]; // FIX: was res.send
     expect(payload.nextScreen).toBe("register_church");
   });
 });
@@ -197,7 +198,7 @@ describe("userController.login", () => {
     await controller.login(req, res);
     await flushPromises();
 
-    const payload = res.send.mock.calls[0][0];
+    const payload = res.json.mock.calls[0][0]; // FIX: was res.send
     expect(payload.nextScreen).toBe("join_church");
     expect(payload.hasChurch).toBe(false);
   });
@@ -225,7 +226,7 @@ describe("userController.login", () => {
     await controller.login(req, res);
     await flushPromises();
 
-    const payload = res.send.mock.calls[0][0];
+    const payload = res.json.mock.calls[0][0]; // FIX: was res.send
     expect(payload.nextScreen).toBe("pending_approval");
     expect(payload.hasChurch).toBe(true);
     expect(payload.activeMembershipId).toBeNull(); // not active yet
@@ -256,7 +257,7 @@ describe("userController.login", () => {
     await controller.login(req, res);
     await flushPromises();
 
-    const payload = res.send.mock.calls[0][0];
+    const payload = res.json.mock.calls[0][0]; // FIX: was res.send
     expect(payload.nextScreen).toBe("admin_home");
     expect(payload.activeMembershipId).toBe("membership1");
     expect(payload.activeChurchId).toBe("church1");
@@ -287,7 +288,7 @@ describe("userController.login", () => {
     await controller.login(req, res);
     await flushPromises();
 
-    const payload = res.send.mock.calls[0][0];
+    const payload = res.json.mock.calls[0][0]; // FIX: was res.send
     expect(payload.nextScreen).toBe("member_home");
   });
 });
