@@ -15,8 +15,8 @@ const signToken = (userId) =>
 // used a couple places where we return token + user together
 const sendAuthResponse = (res, statusCode, user) => {
     const token = signToken(user._id);
-    res.status(statusCode).send({
-        error: false,
+    res.status(statusCode).json({
+        success: true,
         token,
         user: user.toSafeObject(),
     });
@@ -31,8 +31,14 @@ const sendAuthResponse = (res, statusCode, user) => {
 const catchAsync = (fn) => (req, res, next) =>
     Promise.resolve(fn(req, res, next)).catch(next);
 
+// REVERTED: this project's Flutter app checks response.data['success'],
+// not an 'error' field. A previous pass over this file (and every other
+// controller touched in this project) mistakenly applied a different
+// project's {error, data} convention instead of confirming what this
+// app's AuthController etc. actually parse. Back to {success, message}
+// to match the real, working frontend contract.
 const errorResponse = (res, statusCode, message) =>
-    res.status(statusCode).send({ error: true, message });
+    res.status(statusCode).json({ success: false, message });
 
 // user picks member or admin on the "who are you" screen, we just echo it back
 // so the app knows where to route next, we dont actually store this anywhere
@@ -68,8 +74,8 @@ const register = catchAsync(async (req, res) => {
 
     const token = signToken(user._id);
 
-    res.status(201).send({
-        error: false,
+    res.status(201).json({
+        success: true,
         token,
         user: user.toSafeObject(),
         // tells flutter where to go next, defaults to join_church if intent missing
@@ -121,8 +127,8 @@ const login = catchAsync(async (req, res) => {
 
     const token = signToken(user._id);
 
-    res.status(200).send({
-        error: false,
+    res.status(200).json({
+        success: true,
         token,
         user: user.toSafeObject(),
         nextScreen,
@@ -141,7 +147,7 @@ const logout = catchAsync(async (req, res) => {
             $pull: { pushTokens: pushToken },
         });
     }
-    res.status(200).send({ error: false, message: "Logged out successfully" });
+    res.status(200).json({ success: true, message: "Logged out successfully" });
 });
 
 // requires current pw to confirm its actually you before changing it
@@ -179,8 +185,8 @@ const getMe = catchAsync(async (req, res) => {
         .select("-notes") // dont leak pastoral notes back to the member themself
         .lean();
 
-    res.status(200).send({
-        error: false,
+    res.status(200).json({
+        success: true,
         user: user.toSafeObject(),
         memberships,
     });
@@ -212,7 +218,7 @@ const updateMe = catchAsync(async (req, res) => {
         { new: true, runValidators: true }
     );
 
-    res.status(200).send({ error: false, user: user.toSafeObject() });
+    res.status(200).json({ success: true, user: user.toSafeObject() });
 });
 
 // soft delete only, keeps giving/attendance history intact for records
@@ -221,7 +227,7 @@ const deleteMe = catchAsync(async (req, res) => {
 
     await Membership.updateMany({ user: req.user._id }, { status: "inactive" });
 
-    res.status(200).send({ error: false, message: "Account deactivated successfully" });
+    res.status(200).json({ success: true, message: "Account deactivated successfully" });
 });
 
 // app calls this after getting an fcm/apns token, or on logout to clean it up
@@ -241,7 +247,7 @@ const updatePushToken = catchAsync(async (req, res) => {
 
     await User.findByIdAndUpdate(req.user._id, update);
 
-    res.status(200).send({ error: false, message: `Push token ${action}ed` });
+    res.status(200).json({ success: true, message: `Push token ${action}ed` });
 });
 
 // super admin only, lists everyone, basic search + filter
@@ -264,12 +270,12 @@ const getAllUsers = catchAsync(async (req, res) => {
         User.countDocuments(filter),
     ]);
 
-    res.status(200).send({
-        error: false,
+    res.status(200).json({
+        success: true,
         total,
         page,
         pages: Math.ceil(total / limit),
-        data: users,
+        users,
     });
 });
 
@@ -284,8 +290,8 @@ const getUserById = catchAsync(async (req, res) => {
         .populate("cellGroup", "name")
         .lean();
 
-    res.status(200).send({
-        error: false,
+    res.status(200).json({
+        success: true,
         user: user.toSafeObject(),
         memberships,
     });
@@ -303,8 +309,8 @@ const setUserStatus = catchAsync(async (req, res) => {
         return errorResponse(res, 404, "User not found");
     }
 
-    res.status(200).send({
-        error: false,
+    res.status(200).json({
+        success: true,
         message: `User ${isActive ? "activated" : "deactivated"}`,
         user: user.toSafeObject(),
     });
@@ -332,13 +338,13 @@ const getMyNotifications = catchAsync(async (req, res) => {
         await Notification.updateMany({ _id: { $in: ids } }, { isRead: true, readAt: new Date() });
     }
 
-    res.status(200).send({
-        error: false,
+    res.status(200).json({
+        success: true,
         total,
         unreadCount,
         page,
         pages: Math.ceil(total / limit),
-        data: notifications,
+        notifications,
     });
 });
 
@@ -348,14 +354,14 @@ const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) {
-            return res.status(400).send({ error: true, message: "Email address is required" });
+            return res.status(400).json({ success: false, message: "Email address is required" });
         }
 
         const user = await User.findOne({ email: email.toLowerCase().trim() });
 
         if (!user) {
-            return res.send({
-                error: false,
+            return res.json({
+                success: true,
                 message: "If that email is registered you will receive a reset code",
             });
         }
@@ -371,10 +377,10 @@ const forgotPassword = async (req, res) => {
 
         console.log(`reset code for ${user.email}: ${code}`); // TODO remove before shipping
 
-        res.send({ error: false, message: "A 4-digit reset code has been sent to your email" });
+        res.json({ success: true, message: "A 4-digit reset code has been sent to your email" });
     } catch (err) {
         console.log("forgotPassword error:", err);
-        res.status(500).send({ error: true, message: "Failed to send reset code. Please try again." });
+        res.status(500).json({ success: false, message: "Failed to send reset code. Please try again." });
     }
 };
 
@@ -399,10 +405,10 @@ const resetPassword = async (req, res) => {
     try {
         const { email, code, newPassword } = req.body;
         if (!email || !code || !newPassword) {
-            return res.status(400).send({ error: true, message: "Email, code and new password are required" });
+            return res.status(400).json({ success: false, message: "Email, code and new password are required" });
         }
         if (newPassword.length < 6) {
-            return res.status(400).send({ error: true, message: "Password must be at least 6 characters" });
+            return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
         }
 
         const user = await User.findOne({
@@ -412,8 +418,8 @@ const resetPassword = async (req, res) => {
         });
 
         if (!user) {
-            return res.status(400).send({
-                error: true,
+            return res.status(400).json({
+                success: false,
                 message: "Invalid or expired reset code. Please request a new one.",
             });
         }
@@ -424,10 +430,10 @@ const resetPassword = async (req, res) => {
         user.mustChangePassword = false; // covers the admin-created-account case
         await user.save();
 
-        res.send({ error: false, message: "Password reset successfully. You can now log in." });
+        res.json({ success: true, message: "Password reset successfully. You can now log in." });
     } catch (err) {
         console.log("resetPassword error:", err);
-        res.status(500).send({ error: true, message: "Failed to reset password. Please try again." });
+        res.status(500).json({ success: false, message: "Failed to reset password. Please try again." });
     }
 };
 
@@ -443,12 +449,12 @@ const verifyResetCode = async (req, res) => {
         });
 
         if (!user) {
-            return res.status(400).send({ error: true, message: "Invalid or expired code" });
+            return res.status(400).json({ success: false, message: "Invalid or expired code" });
         }
 
-        res.send({ error: false, message: "Code verified" });
+        res.json({ success: true, message: "Code verified" });
     } catch (err) {
-        res.status(500).send({ error: true, message: "Verification failed" });
+        res.status(500).json({ success: false, message: "Verification failed" });
     }
 };
 
@@ -478,7 +484,7 @@ const uploadPhoto = async (req, res) => {
         { new: true }
     );
 
-    res.send({ error: false, photoUrl: result.secure_url, user: user.toSafeObject() });
+    res.json({ success: true, photoUrl: result.secure_url, user: user.toSafeObject() });
 };
 
 // sends whatever the user typed straight to support inbox
@@ -541,15 +547,15 @@ const submitFeedback = async (req, res) => {
     `,
     });
 
-    res.send({
-        error: false,
+    res.json({
+        success: true,
         message: "Thank you for your feedback. We will get back to you within 5 business days.",
     });
 };
 
 const getNotificationPreferences = catchAsync(async (req, res) => {
     const user = await User.findById(req.user._id).select("notificationPreferences");
-    res.send({ error: false, preferences: user.notificationPreferences ?? {} });
+    res.json({ success: true, preferences: user.notificationPreferences ?? {} });
 });
 
 const updateNotificationPreferences = catchAsync(async (req, res) => {
@@ -566,7 +572,7 @@ const updateNotificationPreferences = catchAsync(async (req, res) => {
     });
 
     if (Object.keys(updates).length === 0) {
-        return res.status(400).send({ error: true, message: "No valid preferences provided" });
+        return res.status(400).json({ success: false, message: "No valid preferences provided" });
     }
 
     const user = await User.findByIdAndUpdate(
@@ -575,7 +581,7 @@ const updateNotificationPreferences = catchAsync(async (req, res) => {
         { new: true }
     ).select("notificationPreferences");
 
-    res.send({ error: false, preferences: user.notificationPreferences });
+    res.json({ success: true, preferences: user.notificationPreferences });
 });
 
 module.exports = {

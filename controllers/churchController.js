@@ -21,10 +21,14 @@ const {
 const catchAsync = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
+// REVERTED: back to {success, message} - this project's Flutter models
+// (ChurchController, ChurchRepository) parse response fields at the TOP
+// level (response.membership, response.church, result.data as the church
+// object directly, etc.) - not nested under a generic {error, data}
+// wrapper. Every response below matches the app's original expected shape.
 const errorResponse = (res, statusCode, message) =>
-  res.status(statusCode).send({ error: true, message });
+  res.status(statusCode).json({ success: false, message });
 
-// keeps generating codes till we get one thats free
 const generateUniqueCode = async () => {
   let code;
   let exists = true;
@@ -36,7 +40,6 @@ const generateUniqueCode = async () => {
 };
 
 module.exports = {
-  // ── church crud ──────────────────────────────────────────
   createChurch: catchAsync(async (req, res) => {
     const { name, description, contact, address, serviceSchedule } = req.body;
 
@@ -58,7 +61,6 @@ module.exports = {
       },
     });
 
-    // creator becomes admin automatically
     await Membership.create({
       user: req.user._id,
       church: church._id,
@@ -69,17 +71,16 @@ module.exports = {
       joinedAt: new Date(),
     });
 
-    return res.status(201).send({ error: false, data: church });
+    res.status(201).json({ success: true, church });
   }),
 
   getChurch: catchAsync(async (req, res) => {
     const church = await Church.findById(req.params.churchId).lean();
     if (!church) return errorResponse(res, 404, "Church not found");
-    return res.send({ error: false, data: church });
+    res.status(200).json({ success: true, church });
   }),
 
   updateChurch: catchAsync(async (req, res) => {
-    // dont let these get touched thru a generic update
     const blocked = ["code", "subscription", "memberCount"];
     blocked.forEach((f) => delete req.body[f]);
 
@@ -90,10 +91,9 @@ module.exports = {
     );
 
     if (!church) return errorResponse(res, 404, "Church not found");
-    return res.send({ error: false, data: church });
+    res.status(200).json({ success: true, church });
   }),
 
-  // soft delete only
   deleteChurch: catchAsync(async (req, res) => {
     const church = await Church.findByIdAndUpdate(
       req.params.churchId,
@@ -101,11 +101,9 @@ module.exports = {
       { new: true }
     );
     if (!church) return errorResponse(res, 404, "Church not found");
-    return res.send({ error: false, message: "Church deactivated" });
+    res.status(200).json({ success: true, message: "Church deactivated" });
   }),
 
-  // ── sermons ──────────────────────────────────────────────
-  // handles both an uploaded audio file and a plain video link
   createSermon: catchAsync(async (req, res) => {
     const { churchId } = req.params;
     const {
@@ -144,7 +142,6 @@ module.exports = {
       return errorResponse(res, 400, "Provide either an audio file or a video URL");
     }
 
-    // tags/refs can come in as csv string or already an array
     const parseList = (val) => {
       if (!val) return [];
       if (Array.isArray(val)) return val.filter(Boolean);
@@ -172,7 +169,6 @@ module.exports = {
         : undefined,
     });
 
-    // only ping members if its actually going out now, not a draft
     if ((status || "published") === "published") {
       notifyNewSermon({
         churchId: churchId,
@@ -181,7 +177,7 @@ module.exports = {
       });
     }
 
-    return res.status(201).send({ error: false, data: sermon });
+    res.status(201).json({ success: true, sermon });
   }),
 
   getSermons: catchAsync(async (req, res) => {
@@ -199,7 +195,6 @@ module.exports = {
       .limit(limit)
       .lean();
 
-    // search is done in memory after fetch, not ideal for big datasets but fine for now
     if (req.query.search) {
       const term = req.query.search.toLowerCase();
       sermons = sermons.filter(
@@ -212,7 +207,7 @@ module.exports = {
     }
 
     const total = await Sermon.countDocuments(filter);
-    return res.send({ error: false, total, page, data: sermons });
+    res.status(200).json({ success: true, total, page, sermons });
   }),
 
   getSermon: catchAsync(async (req, res) => {
@@ -224,7 +219,7 @@ module.exports = {
     if (!sermon) return errorResponse(res, 404, "Sermon not found");
 
     await Sermon.findByIdAndUpdate(sermon._id, { $inc: { views: 1 } });
-    return res.send({ error: false, data: sermon });
+    res.status(200).json({ success: true, sermon });
   }),
 
   updateSermon: catchAsync(async (req, res) => {
@@ -238,7 +233,7 @@ module.exports = {
     );
 
     if (!sermon) return errorResponse(res, 404, "Sermon not found");
-    return res.send({ error: false, data: sermon });
+    res.status(200).json({ success: true, sermon });
   }),
 
   deleteSermon: catchAsync(async (req, res) => {
@@ -249,7 +244,6 @@ module.exports = {
 
     if (!sermon) return errorResponse(res, 404, "Sermon not found");
 
-    // best effort cleanup, dont fail the whole delete if cloudinary hiccups
     if (sermon.audioUrl && sermon.audioUrl.includes("cloudinary")) {
       try {
         const parts = sermon.audioUrl.split("/");
@@ -263,20 +257,19 @@ module.exports = {
     }
 
     await sermon.deleteOne();
-    return res.send({ error: false, message: "Sermon deleted" });
+    res.status(200).json({ success: true, message: "Sermon deleted" });
   }),
 
-  // ── join by code ─────────────────────────────────────────
   joinByCode: catchAsync(async (req, res) => {
     const { code } = req.body;
-
+      console.log(code)
     if (!code) return errorResponse(res, 400, "Church code is required");
 
     const church = await Church.findOne({
       code: code.toUpperCase().trim(),
       isActive: true,
     });
-
+   // console.log(church)
     if (!church) return errorResponse(res, 404, "No active church found with that code");
 
     const existing = await Membership.findOne({
@@ -286,13 +279,14 @@ module.exports = {
 
     if (existing) {
       if (existing.status === "active") {
+        console.log("You are active");
         return errorResponse(res, 409, "You are already an active member of this church");
       }
       if (existing.status === "pending") {
+        console.log("pending ------");
         return errorResponse(res, 409, "Your membership request is already pending approval");
       }
 
-      // was inactive/removed before, bring em back
       existing.status = church.settings.requireApproval ? "pending" : "active";
       if (!church.settings.requireApproval) {
         existing.approvedAt = new Date();
@@ -308,7 +302,7 @@ module.exports = {
         });
       }
 
-      return res.send({ error: false, data: { membership: existing, church } });
+      return res.status(200).json({ success: true, membership: existing, church });
     }
 
     const autoApprove = !church.settings.requireApproval;
@@ -326,7 +320,6 @@ module.exports = {
       await Church.findByIdAndUpdate(church._id, { $inc: { memberCount: 1 } });
     }
 
-    // let admins know someone new showed up
     const admins = await Membership.find({
       church: church._id,
       role: { $in: ["admin", "pastor"] },
@@ -346,7 +339,6 @@ module.exports = {
       );
     }
 
-    // only push if theres actually something for an admin to approve
     if (!autoApprove) {
       notifyNewMemberRequest({
         churchId: church._id.toString(),
@@ -355,16 +347,14 @@ module.exports = {
       });
     }
 
-    return res.status(201).send({
-      error: false,
-      data: {
-        membership,
-        church: {
-          _id: church._id,
-          name: church.name,
-          code: church.code,
-          logoUrl: church.logoUrl,
-        },
+    res.status(201).json({
+      success: true,
+      membership,
+      church: {
+        _id: church._id,
+        name: church.name,
+        code: church.code,
+        logoUrl: church.logoUrl,
       },
       message: autoApprove
         ? "Welcome! You are now a member."
@@ -372,7 +362,6 @@ module.exports = {
     });
   }),
 
-  // ── member management ────────────────────────────────────
   getMembers: catchAsync(async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, parseInt(req.query.limit) || 20);
@@ -408,12 +397,12 @@ module.exports = {
 
     const total = await Membership.countDocuments(filter);
 
-    return res.send({
-      error: false,
+    res.status(200).json({
+      success: true,
       total,
       page,
       pages: Math.ceil(total / limit),
-      data: memberships,
+      members: memberships,
     });
   }),
 
@@ -427,7 +416,7 @@ module.exports = {
       .populate("approvedBy", "firstName lastName");
 
     if (!membership) return errorResponse(res, 404, "Member not found");
-    return res.send({ error: false, data: membership });
+    res.status(200).json({ success: true, membership });
   }),
 
   approveMember: catchAsync(async (req, res) => {
@@ -462,7 +451,7 @@ module.exports = {
       church: { name: church?.name ?? "your church" },
     });
 
-    return res.send({ error: false, data: membership });
+    res.status(200).json({ success: true, membership });
   }),
 
   updateMember: catchAsync(async (req, res) => {
@@ -484,7 +473,7 @@ module.exports = {
     ).populate("user", "firstName lastName email photoUrl");
 
     if (!membership) return errorResponse(res, 404, "Member not found");
-    return res.send({ error: false, data: membership });
+    res.status(200).json({ success: true, membership });
   }),
 
   setMemberStatus: catchAsync(async (req, res) => {
@@ -502,7 +491,7 @@ module.exports = {
     );
 
     if (!membership) return errorResponse(res, 404, "Member not found");
-    return res.send({ error: false, data: membership });
+    res.status(200).json({ success: true, membership });
   }),
 
   getFlaggedMembers: catchAsync(async (req, res) => {
@@ -516,7 +505,7 @@ module.exports = {
       .sort({ flaggedAt: -1 })
       .lean();
 
-    return res.send({ error: false, total: flagged.length, data: flagged });
+    res.status(200).json({ success: true, total: flagged.length, members: flagged });
   }),
 
   getDashboard: catchAsync(async (req, res) => {
@@ -532,13 +521,15 @@ module.exports = {
         Membership.countDocuments({ church: churchId, isFlagged: true, status: "active" }),
       ]);
 
-    return res.send({
-      error: false,
-      data: { totalMembers, newThisMonth, pendingApprovals, flaggedCount },
+    res.status(200).json({
+      success: true,
+      totalMembers,
+      newThisMonth,
+      pendingApprovals,
+      flaggedCount,
     });
   }),
 
-  // ── prayer ───────────────────────────────────────────────
   createPrayerRequest: catchAsync(async (req, res) => {
     const { title, body, category, isAnonymous, isPublic } = req.body;
     if (!title) return errorResponse(res, 400, "Prayer title is required");
@@ -560,7 +551,7 @@ module.exports = {
     const response = prayer.toObject();
     response.hasPrayed = false;
 
-    return res.status(201).send({ error: false, data: response });
+    res.status(201).json({ success: true, prayer: response });
   }),
 
   getPrayerRequests: catchAsync(async (req, res) => {
@@ -586,7 +577,7 @@ module.exports = {
     }));
 
     const total = await PrayerRequest.countDocuments(filter);
-    return res.send({ error: false, total, page, data: enriched });
+    res.status(200).json({ success: true, total, page, prayers: enriched });
   }),
 
   getPrayerRequest: catchAsync(async (req, res) => {
@@ -600,7 +591,7 @@ module.exports = {
     const userId = req.user._id.toString();
     prayer.hasPrayed = prayer.prayedBy?.some((id) => id.toString() === userId) || false;
 
-    return res.send({ error: false, data: prayer });
+    res.status(200).json({ success: true, prayer });
   }),
 
   prayForRequest: catchAsync(async (req, res) => {
@@ -624,7 +615,6 @@ module.exports = {
     await prayer.save();
     await prayer.populate("user", "firstName lastName photoUrl");
 
-    // only fires at certain milestone counts (1, 5, 10, 25, 50) not every single tap
     notifyPrayerReceived({
       request: prayer,
       prayerCount: prayer.prayerCount,
@@ -633,7 +623,7 @@ module.exports = {
     const response = prayer.toObject();
     response.hasPrayed = true;
 
-    return res.send({ error: false, data: response });
+    res.status(200).json({ success: true, prayer: response });
   }),
 
   markAnswered: catchAsync(async (req, res) => {
@@ -655,7 +645,7 @@ module.exports = {
     const userId = req.user._id.toString();
     response.hasPrayed = prayer.prayedBy.some((id) => id.toString() === userId);
 
-    return res.send({ error: false, data: response });
+    res.status(200).json({ success: true, prayer: response });
   }),
 
   deletePrayerRequest: catchAsync(async (req, res) => {
@@ -674,10 +664,9 @@ module.exports = {
     }
 
     await prayer.deleteOne();
-    return res.send({ error: false, message: "Deleted" });
+    res.status(200).json({ success: true, message: "Deleted" });
   }),
 
-  // ── announcements ────────────────────────────────────────
   createAnnouncement: catchAsync(async (req, res) => {
     const { title, body, audience, isPinned, expiresAt, imageUrl } = req.body;
 
@@ -704,7 +693,7 @@ module.exports = {
       audience: announcement.audience || "all",
     });
 
-    return res.status(201).send({ error: false, data: announcement });
+    res.status(201).json({ success: true, announcement });
   }),
 
   getAnnouncements: catchAsync(async (req, res) => {
@@ -718,7 +707,7 @@ module.exports = {
       .limit(limit)
       .lean();
 
-    return res.send({ error: false, data: announcements });
+    res.status(200).json({ success: true, announcements });
   }),
 
   getAnnouncement: catchAsync(async (req, res) => {
@@ -728,7 +717,7 @@ module.exports = {
     }).populate("author", "firstName lastName");
 
     if (!announcement) return errorResponse(res, 404, "Announcement not found");
-    return res.send({ error: false, data: announcement });
+    res.status(200).json({ success: true, announcement });
   }),
 
   updateAnnouncement: catchAsync(async (req, res) => {
@@ -743,7 +732,7 @@ module.exports = {
     ).populate("author", "firstName lastName");
 
     if (!announcement) return errorResponse(res, 404, "Announcement not found");
-    return res.send({ error: false, data: announcement });
+    res.status(200).json({ success: true, announcement });
   }),
 
   deleteAnnouncement: catchAsync(async (req, res) => {
@@ -753,10 +742,9 @@ module.exports = {
     });
 
     if (!announcement) return errorResponse(res, 404, "Announcement not found");
-    return res.send({ error: false, message: "Announcement deleted" });
+    res.status(200).json({ success: true, message: "Announcement deleted" });
   }),
 
-  // ── events ───────────────────────────────────────────────
   createEvent: catchAsync(async (req, res) => {
     const { title, description, location, startsAt, endsAt, imageUrl, isPublic } = req.body;
 
@@ -787,7 +775,7 @@ module.exports = {
       eventId: event._id.toString(),
     });
 
-    return res.status(201).send({ error: false, data: event });
+    res.status(201).json({ success: true, event });
   }),
 
   getEvents: catchAsync(async (req, res) => {
@@ -808,7 +796,7 @@ module.exports = {
       hasRsvped: e.rsvpList?.some((id) => id.toString() === userId) || false,
     }));
 
-    return res.send({ error: false, data: enriched });
+    res.status(200).json({ success: true, events: enriched });
   }),
 
   getEvent: catchAsync(async (req, res) => {
@@ -821,7 +809,7 @@ module.exports = {
     if (!event) return errorResponse(res, 404, "Event not found");
 
     event.hasRsvped = event.rsvpList?.some((id) => id.toString() === userId) || false;
-    return res.send({ error: false, data: event });
+    res.status(200).json({ success: true, event });
   }),
 
   updateEvent: catchAsync(async (req, res) => {
@@ -836,7 +824,7 @@ module.exports = {
     ).populate("organiser", "firstName lastName");
 
     if (!event) return errorResponse(res, 404, "Event not found");
-    return res.send({ error: false, data: event });
+    res.status(200).json({ success: true, event });
   }),
 
   cancelEvent: catchAsync(async (req, res) => {
@@ -851,7 +839,7 @@ module.exports = {
     ).populate("organiser", "firstName lastName");
 
     if (!event) return errorResponse(res, 404, "Event not found");
-    return res.send({ error: false, data: event });
+    res.status(200).json({ success: true, event });
   }),
 
   rsvp: catchAsync(async (req, res) => {
@@ -876,12 +864,9 @@ module.exports = {
     const response = event.toObject();
     response.hasRsvped = true;
 
-    return res.send({ error: false, data: response });
+    res.status(200).json({ success: true, event: response });
   }),
 
-  // ── admin-created member ─────────────────────────────────
-  // seperate from joinByCode - this is for when an admin manually adds
-  // someone who doesnt have the app / didnt sign up themself
   createMemberByAdmin: async (req, res) => {
     try {
       const bcrypt = require("bcryptjs");
@@ -896,23 +881,23 @@ module.exports = {
       } = req.body;
 
       if (!firstName || !lastName || !email) {
-        return res.status(400).send({
-          error: true,
+        return res.status(400).json({
+          success: false,
           message: "First name, last name and email are required",
         });
       }
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res.status(400).send({
-          error: true,
+        return res.status(400).json({
+          success: false,
           message: "Please provide a valid email address",
         });
       }
 
       const church = await Church.findById(req.params.churchId);
       if (!church) {
-        return res.status(404).send({ error: true, message: "Church not found" });
+        return res.status(404).json({ success: false, message: "Church not found" });
       }
 
       let user = await User.findOne({ email: email.toLowerCase() });
@@ -927,13 +912,12 @@ module.exports = {
         });
 
         if (existingMembership) {
-          return res.status(409).send({
-            error: true,
+          return res.status(409).json({
+            success: false,
             message: `${firstName} is already a member of this church`,
           });
         }
       } else {
-        // new user, spin em up a temp password they gotta change on first login
         const tempPassword = `Churza${crypto.randomInt(100000, 999999)}`;
         const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
@@ -968,7 +952,6 @@ module.exports = {
               `,
             });
           } catch (emailErr) {
-            // dont wanna fail account creation just cos the email provider hiccuped
             console.warn("Welcome email failed:", emailErr.message);
           }
         }
@@ -992,18 +975,18 @@ module.exports = {
 
       await membership.populate("user", "firstName lastName email photoUrl phone");
 
-      return res.status(201).send({
-        error: false,
-        data: membership,
+      res.status(201).json({
+        success: true,
+        membership,
         isExistingUser,
         message: isExistingUser
           ? `${firstName} ${lastName} has been added to your church`
           : `Account created for ${firstName} ${lastName}. ${sendWelcomeEmail ? "A welcome email has been sent." : ""}`,
       });
     } catch (err) {
-      console.log(err);
-      return res.status(500).send({
-        error: true,
+      console.error("createMemberByAdmin error:", err);
+      res.status(500).json({
+        success: false,
         message: err.code === 11000
           ? "This email is already registered"
           : "Failed to create member account",

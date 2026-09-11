@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-     "test": "jest",
+    "test": "jest",
     "dev": "nodemon server.js"
   },
   "dependencies": {
@@ -21,8 +21,8 @@
     "mongoose": "^7.3.1",
     "morgan": "^1.10.0",
     "multer": "^2.1.1",
-    "node-cron": "^3.0.3",
-    "nodemailer": "^6.10.1",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^10.0.3",
     "socket.io": "^4.8.3",
     "stripe": "^12.18.0",
     "twilio": "^4.14.0",
